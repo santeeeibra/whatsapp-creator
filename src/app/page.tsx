@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Share2,
   Download,
@@ -14,9 +14,8 @@ import {
   Check,
   AlertCircle,
   RefreshCw,
-  ExternalLink,
   Smartphone,
-  Layers,
+  Info,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { convertVideoToGif, captureCurrentFrame } from '@/lib/converter';
@@ -48,17 +47,16 @@ export default function Home() {
   // Resultado
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [resultMimeType, setResultMimeType] = useState<string>('image/webp');
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Clip de prueba precargado
   const sampleVideoUrl =
     'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
 
-  // Manejo de carga de video desde URL
   const handleExtractUrl = async (customUrl?: string) => {
     const targetUrl = customUrl || url;
     if (!targetUrl.trim()) return;
@@ -81,7 +79,6 @@ export default function Home() {
         throw new Error(data.error || 'No se pudo procesar el enlace.');
       }
 
-      // Si es un video remoto, pasarlo por el proxy para evitar problemas de CORS en Canvas
       const proxyUrl = `/api/proxy-video?url=${encodeURIComponent(data.videoUrl)}`;
       setVideoSrc(proxyUrl);
       setVideoTitle(data.title || 'Video seleccionado');
@@ -93,7 +90,6 @@ export default function Home() {
     }
   };
 
-  // Manejo de archivo local (Drag & drop o selector)
   const handleFileUpload = (file: File) => {
     if (!file.type.startsWith('video/')) {
       setErrorMessage('Por favor seleccioná un archivo de video válido (.mp4, .webm, .mov)');
@@ -110,32 +106,27 @@ export default function Home() {
     setPlatform('local');
   };
 
-  // Cuando el video carga su metadata
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
       const dur = videoRef.current.duration;
       setDuration(dur);
       setStartTime(0);
-      // Por defecto 3 segundos o la duración total si es menor
       const initialEnd = Math.min(3, Math.max(1, dur));
       setEndTime(initialEnd);
     }
   };
 
-  // Actualización de tiempo de reproducción
   const handleTimeUpdate = () => {
     if (videoRef.current) {
       const cur = videoRef.current.currentTime;
       setCurrentTime(cur);
 
-      // Si se pasa del tiempo final seleccionado, rebobinar al inicio del clip
       if (cur >= endTime) {
         videoRef.current.currentTime = startTime;
       }
     }
   };
 
-  // Play / Pause toggle
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (isPlaying) {
@@ -150,7 +141,6 @@ export default function Home() {
     }
   };
 
-  // Generar Sticker o GIF
   const handleConvert = async () => {
     if (!videoRef.current) return;
 
@@ -164,22 +154,52 @@ export default function Home() {
         const objUrl = URL.createObjectURL(blob);
         setResultBlob(blob);
         setResultUrl(objUrl);
+        setResultMimeType('image/png');
       } else {
-        const blob = await convertVideoToGif(videoRef.current, {
+        // 1. Generar animación base con Canvas en el navegador
+        const gifBlob = await convertVideoToGif(videoRef.current, {
           startTime,
           endTime,
           fps,
           width: format === 'sticker' ? 320 : 400,
           isSquare: format === 'sticker',
-          onProgress: (p) => setProgress(p),
+          onProgress: (p) => setProgress(Math.min(90, Math.round(p * 0.9))),
         });
 
-        const objUrl = URL.createObjectURL(blob);
-        setResultBlob(blob);
-        setResultUrl(objUrl);
+        // 2. Si el formato es Sticker para WhatsApp, optimizar a WebP animado de 512x512
+        if (format === 'sticker') {
+          setProgress(95);
+          const formData = new FormData();
+          formData.append('file', gifBlob, 'temp.gif');
+
+          const resWebp = await fetch('/api/to-webp', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (resWebp.ok) {
+            const webpBlob = await resWebp.blob();
+            const objUrl = URL.createObjectURL(webpBlob);
+            setResultBlob(webpBlob);
+            setResultUrl(objUrl);
+            setResultMimeType('image/webp');
+          } else {
+            // Fallback a GIF directo si el servidor falla
+            const objUrl = URL.createObjectURL(gifBlob);
+            setResultBlob(gifBlob);
+            setResultUrl(objUrl);
+            setResultMimeType('image/gif');
+          }
+        } else {
+          const objUrl = URL.createObjectURL(gifBlob);
+          setResultBlob(gifBlob);
+          setResultUrl(objUrl);
+          setResultMimeType('image/gif');
+        }
       }
 
-      // Celebración con confetti
+      setProgress(100);
+
       confetti({
         particleCount: 80,
         spread: 70,
@@ -195,22 +215,17 @@ export default function Home() {
     }
   };
 
-  // Compartir a WhatsApp (1-Click)
   const handleShareWhatsApp = async () => {
     if (!resultBlob) return;
 
-    const fileName =
-      format === 'photo' ? 'captura.png' : format === 'sticker' ? 'sticker.gif' : 'animacion.gif';
-    const mimeType = format === 'photo' ? 'image/png' : 'image/gif';
-    const file = new File([resultBlob], fileName, { type: mimeType });
+    const ext = resultMimeType === 'image/webp' ? 'webp' : resultMimeType === 'image/png' ? 'png' : 'gif';
+    const file = new File([resultBlob], `sticker-whatsapp.${ext}`, { type: resultMimeType });
 
-    // 1. Si el navegador soporta compartir archivos nativos (Mobile: iOS / Android)
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({
           files: [file],
-          title: 'Sticker para WhatsApp',
-          text: '¡Mirá este sticker creado con WhatsApp Creator!',
+          title: 'Sticker animado para WhatsApp',
         });
         setShared(true);
         setTimeout(() => setShared(false), 3000);
@@ -222,19 +237,16 @@ export default function Home() {
       }
     }
 
-    // 2. Si estamos en PC / Desktop, copiar al portapapeles para pegar directo en WhatsApp Web
-    await handleCopyImage();
+    // Si está en PC, descargar automáticamente para que lo arrastre a WhatsApp Web
+    handleDownload();
   };
 
-  // Copiar imagen al portapapeles
   const handleCopyImage = async () => {
     if (!resultBlob) return;
 
     try {
-      // Para portapapeles se requiere PNG
       let clipboardBlob = resultBlob;
       if (resultBlob.type !== 'image/png') {
-        // Convertir frame del resultado a PNG para el clipboard
         const img = new Image();
         img.src = resultUrl!;
         await new Promise((res) => (img.onload = res));
@@ -257,21 +269,19 @@ export default function Home() {
       ]);
 
       setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
+      setTimeout(() => setCopied(false), 4000);
     } catch (err) {
       console.error(err);
-      // Fallback: descargar automáticamente
       handleDownload();
     }
   };
 
-  // Descarga del archivo
   const handleDownload = () => {
     if (!resultUrl) return;
-    const ext = format === 'photo' ? 'png' : 'gif';
+    const ext = resultMimeType === 'image/webp' ? 'webp' : resultMimeType === 'image/png' ? 'png' : 'gif';
     const a = document.createElement('a');
     a.href = resultUrl;
-    a.download = `whatsapp-sticker-${Date.now()}.${ext}`;
+    a.download = `sticker-whatsapp-${Date.now()}.${ext}`;
     a.click();
   };
 
@@ -280,28 +290,24 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#0b0f17] text-white flex flex-col items-center justify-start p-4 sm:p-8 font-sans selection:bg-[#25D366] selection:text-black">
-      {/* Glow de fondo */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#25D366]/10 blur-[130px] pointer-events-none rounded-full" />
 
-      {/* Header */}
       <header className="w-full max-w-3xl flex flex-col items-center text-center my-6 relative z-10">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#25D366]/15 border border-[#25D366]/30 text-[#25D366] text-xs font-semibold uppercase tracking-wider mb-3">
           <Sparkles className="w-3.5 h-3.5" />
-          Convertidor Ultrarrápido a WhatsApp
+          Stickers Animados WebP (512x512) para WhatsApp
         </div>
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
           De Video a Sticker en 1 Click
         </h1>
         <p className="mt-2 text-sm sm:text-base text-zinc-400 max-w-xl">
-          Pegá un enlace de <strong className="text-zinc-200">X (Twitter)</strong> o{' '}
-          <strong className="text-zinc-200">TikTok</strong>, recortá los mejores segundos y
-          compartilo directo a WhatsApp como Sticker o GIF.
+          Convertí videos de <strong className="text-zinc-200">X (Twitter)</strong> o{' '}
+          <strong className="text-zinc-200">TikTok</strong> en stickers animados reales para
+          WhatsApp en segundos.
         </p>
       </header>
 
-      {/* Contenedor principal */}
       <div className="w-full max-w-3xl flex flex-col gap-6 relative z-10">
-        {/* Barra de entrada de enlace */}
         <section className="bg-zinc-900/80 backdrop-blur-md p-4 sm:p-5 rounded-2xl border border-zinc-800 shadow-xl shadow-black/40">
           <label className="block text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">
             Pega el enlace del video:
@@ -345,7 +351,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Opciones secundarias: Subir archivo o Probar Demo */}
           <div className="mt-4 pt-3 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
             <div className="flex items-center gap-2">
               <button
@@ -374,7 +379,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Mensaje de Error */}
           {errorMessage && (
             <div className="mt-3 p-3 rounded-xl bg-red-950/40 border border-red-800/60 text-red-300 text-xs flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
@@ -383,7 +387,6 @@ export default function Home() {
           )}
         </section>
 
-        {/* Zona de Trabajo: Reproductor y Recorte */}
         {videoSrc && (
           <section className="bg-zinc-900/80 backdrop-blur-md p-4 sm:p-6 rounded-2xl border border-zinc-800 shadow-xl flex flex-col gap-5">
             <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
@@ -394,7 +397,6 @@ export default function Home() {
               <span className="text-xs text-zinc-500 truncate max-w-[200px]">{videoTitle}</span>
             </div>
 
-            {/* Video Player */}
             <div className="relative w-full aspect-video sm:max-h-[380px] bg-black rounded-xl overflow-hidden border border-zinc-800 flex items-center justify-center">
               <video
                 ref={videoRef}
@@ -406,7 +408,6 @@ export default function Home() {
                 className="max-h-full max-w-full object-contain"
               />
 
-              {/* Botón flotante Play/Pause */}
               <button
                 onClick={togglePlay}
                 className="absolute inset-0 m-auto w-12 h-12 bg-black/60 hover:bg-black/80 rounded-full flex items-center justify-center text-white backdrop-blur-sm transition-transform active:scale-90"
@@ -414,13 +415,11 @@ export default function Home() {
                 {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
               </button>
 
-              {/* Tiempo actual */}
               <div className="absolute bottom-2 left-2 px-2 py-1 bg-black/70 rounded text-[11px] font-mono text-zinc-300">
                 {currentTime.toFixed(1)}s / {duration.toFixed(1)}s
               </div>
             </div>
 
-            {/* Controles de Rango de Recorte */}
             <div className="space-y-3 bg-zinc-950/60 p-4 rounded-xl border border-zinc-800/80">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-zinc-400">Seleccionar fragmento del video:</span>
@@ -431,11 +430,10 @@ export default function Home() {
                       : 'bg-amber-500/20 text-amber-400'
                   }`}
                 >
-                  Duración: {clipDuration}s {isOptimalForWhatsApp ? '✓ Ideal WhatsApp' : '⚠️ > 5s'}
+                  Duración: {clipDuration}s {isOptimalForWhatsApp ? '✓ Ideal WhatsApp (≤ 5s)' : '⚠️ > 5s'}
                 </span>
               </div>
 
-              {/* Sliders de inicio y fin */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <div className="flex justify-between text-xs text-zinc-400 mb-1">
@@ -481,9 +479,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Configuración de salida */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Formato */}
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">
                   Formato de salida:
@@ -497,7 +493,7 @@ export default function Home() {
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    Sticker 1:1
+                    Sticker 1:1 (.webp)
                   </button>
                   <button
                     onClick={() => setFormat('gif')}
@@ -522,7 +518,6 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Fluidez / FPS */}
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">
                   Fluidez y tamaño:
@@ -537,7 +532,7 @@ export default function Home() {
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    10 FPS (Ligero)
+                    10 FPS (Ligero &lt;500KB)
                   </button>
                   <button
                     onClick={() => setFps(15)}
@@ -554,7 +549,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Botón de Generación */}
             <button
               onClick={handleConvert}
               disabled={isProcessing}
@@ -563,19 +557,18 @@ export default function Home() {
               {isProcessing ? (
                 <>
                   <RefreshCw className="w-5 h-5 animate-spin" />
-                  <span>Convirtiendo en tu navegador ({progress}%)...</span>
+                  <span>Optimizando Sticker ({progress}%)...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
                   <span>
-                    Generar {format === 'photo' ? 'Captura' : format === 'sticker' ? 'Sticker' : 'GIF'}
+                    Generar {format === 'photo' ? 'Captura' : format === 'sticker' ? 'Sticker Animado (.webp)' : 'GIF'}
                   </span>
                 </>
               )}
             </button>
 
-            {/* Barra de progreso */}
             {isProcessing && (
               <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
                 <div
@@ -587,99 +580,97 @@ export default function Home() {
           </section>
         )}
 
-        {/* Sección de Resultado y Acciones para WhatsApp */}
         {resultUrl && (
           <section className="bg-zinc-900/90 backdrop-blur-md p-6 rounded-2xl border-2 border-[#25D366]/50 shadow-2xl flex flex-col items-center gap-5">
             <div className="flex items-center gap-2 text-[#25D366] font-semibold text-sm">
               <Check className="w-5 h-5" />
-              ¡Listo para enviar a WhatsApp!
+              ¡Sticker animado generado exitosamente!
             </div>
 
-            {/* Visualizador del resultado */}
+            {/* Visualizador del resultado con drag directo */}
             <div className="p-3 bg-zinc-950 rounded-2xl border border-zinc-800 shadow-inner flex flex-col items-center">
-              {/* Contenedor estilo sticker */}
-              <div className="relative w-64 h-64 flex items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-zinc-900 to-black">
+              <div className="relative w-64 h-64 flex items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-zinc-900 to-black cursor-grab active:cursor-grabbing">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={resultUrl}
-                  alt="Resultado Sticker"
+                  alt="Sticker animado"
+                  draggable
                   className="max-w-full max-h-full object-contain drop-shadow-2xl"
                 />
               </div>
 
               {resultBlob && (
-                <div className="mt-3 text-xs text-zinc-400">
-                  Peso: {(resultBlob.size / 1024).toFixed(1)} KB &bull;{' '}
-                  <span className="text-[#25D366]">Listo para compartir</span>
+                <div className="mt-3 text-xs text-zinc-400 flex items-center gap-2">
+                  <span>Peso: <strong>{(resultBlob.size / 1024).toFixed(1)} KB</strong></span>
+                  &bull;
+                  <span className="text-[#25D366]">
+                    {resultMimeType === 'image/webp' ? 'Formato Oficial WebP Animado (WhatsApp)' : 'Formato GIF'}
+                  </span>
                 </div>
               )}
             </div>
 
+            {/* AVISO CLAVE SOBRE WHATSAPP WEB Y PORTAPAPELES */}
+            <div className="w-full bg-amber-950/30 border border-amber-800/40 rounded-xl p-3 text-xs text-amber-200/90 flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold text-amber-300">
+                  ¿Por qué al pegar con Ctrl+V se envía estático?
+                </p>
+                <p className="text-zinc-300 leading-relaxed">
+                  Por seguridad, los navegadores (Chrome, Edge) solo permiten copiar <strong>imágenes estáticas (PNG)</strong> al portapapeles.
+                </p>
+                <p className="text-zinc-300 leading-relaxed">
+                  🎯 <strong>Para que se mueva en bucle en WhatsApp Web:</strong> Tocá{' '}
+                  <strong className="text-white">Descargar Sticker</strong> y{' '}
+                  <strong className="text-[#25D366]">arrastrá el archivo directamente adentro de tu chat</strong>. ¡WhatsApp lo detectará de inmediato como sticker animado!
+                </p>
+              </div>
+            </div>
+
             {/* Botones de acción rápida */}
             <div className="w-full flex flex-col sm:flex-row gap-3">
-              {/* Botón Principal: Compartir WhatsApp 1-Click */}
               <button
                 onClick={handleShareWhatsApp}
                 className="flex-1 py-3.5 px-4 bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/25 active:scale-95"
               >
                 <Share2 className="w-5 h-5" />
-                <span>{shared ? '¡Compartido!' : 'Enviar a WhatsApp (1 Click)'}</span>
+                <span>{shared ? '¡Compartido!' : 'Compartir en WhatsApp'}</span>
               </button>
 
-              {/* Botón Copiar al portapapeles */}
-              <button
-                onClick={handleCopyImage}
-                className="py-3.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95"
-              >
-                {copied ? <Check className="w-4 h-4 text-[#25D366]" /> : <Copy className="w-4 h-4" />}
-                <span>{copied ? '¡Copiado!' : 'Copiar Imagen'}</span>
-              </button>
-
-              {/* Botón Descargar */}
               <button
                 onClick={handleDownload}
-                className="py-3.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95"
+                className="py-3.5 px-5 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95 border border-zinc-700"
               >
-                <Download className="w-4 h-4" />
-                <span>Descargar</span>
+                <Download className="w-4 h-4 text-[#25D366]" />
+                <span>Descargar Sticker ({resultMimeType === 'image/webp' ? '.webp' : '.gif'})</span>
+              </button>
+
+              <button
+                onClick={handleCopyImage}
+                title="Copia el primer frame estático para previsualización"
+                className="py-3.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-[#25D366]" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? 'Copiado' : 'Copiar Miniatura'}</span>
               </button>
             </div>
-
-            <p className="text-xs text-zinc-400 text-center">
-              💡 <strong>En el celular</strong>: Se abre WhatsApp directamente para elegir el contacto.
-              <br />
-              💡 <strong>En PC / Mac</strong>: Tocá &ldquo;Copiar Imagen&rdquo; y pegala con{' '}
-              <kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-200">Ctrl + V</kbd> en
-              cualquier chat de WhatsApp Web.
-            </p>
           </section>
         )}
 
-        {/* Guía informativa de compatibilidad */}
         <footer className="mt-4 p-5 rounded-xl bg-zinc-950/40 border border-zinc-800/60 text-xs text-zinc-400 flex flex-col gap-3">
           <div className="font-semibold text-zinc-300 flex items-center gap-2">
             <Smartphone className="w-4 h-4 text-[#25D366]" />
-            ¿Por qué funciona en 1 Click y sin costo de servidor?
+            Cómo guardar cualquier sticker en tus favoritos ⭐
           </div>
           <p>
-            El procesamiento y renderizado de frames se ejecuta al 100% en tu propio navegador
-            usando aceleración por <strong>HTML5 Canvas</strong> y algoritmos de paleta cuántica.
-            Esto permite alojarlo gratis en Vercel sin límites de CPU ni tiempos de espera.
+            Una vez enviado el sticker a cualquier conversación (o a tu chat de &ldquo;Mensajes contigo mismo&rdquo;):
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-zinc-800 text-[11px]">
-            <div>
-              <strong className="text-zinc-300">X (Twitter):</strong> Extracción instantánea sin
-              claves ni logueo.
-            </div>
-            <div>
-              <strong className="text-zinc-300">TikTok:</strong> Extracción en alta definición sin
-              marca de agua.
-            </div>
-            <div>
-              <strong className="text-zinc-300">Videos Locales:</strong> Arrastrá cualquier video
-              directo desde tu galería.
-            </div>
-          </div>
+          <ol className="list-decimal pl-5 space-y-1 text-zinc-300">
+            <li>Hacé clic / tocá sobre el sticker animado en el chat.</li>
+            <li>Seleccioná la opción <strong>&ldquo;Añadir a favoritos&rdquo; (⭐)</strong>.</li>
+            <li>¡Listo! Te queda guardado para siempre en tu bandeja de stickers de WhatsApp.</li>
+          </ol>
         </footer>
       </div>
     </main>
