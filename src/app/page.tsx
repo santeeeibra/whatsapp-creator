@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Share2,
   Download,
@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Smartphone,
   Info,
+  Apple,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { convertVideoToGif, captureCurrentFrame } from '@/lib/converter';
@@ -23,12 +24,20 @@ import { convertVideoToGif, captureCurrentFrame } from '@/lib/converter';
 type Platform = 'twitter' | 'tiktok' | 'direct' | 'local' | null;
 
 export default function Home() {
-  // Estados de entrada
   const [url, setUrl] = useState('');
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isIOS, setIsIOS] = useState(false);
 
-  // Estados del video
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const isApple =
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      setIsIOS(isApple);
+    }
+  }, []);
+
   const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [videoTitle, setVideoTitle] = useState<string>('');
   const [platform, setPlatform] = useState<Platform>(null);
@@ -38,14 +47,12 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
 
-  // Opciones de conversión
   const [format, setFormat] = useState<'sticker' | 'gif' | 'photo'>('sticker');
   const [fps, setFps] = useState<number>(12);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [statusText, setStatusText] = useState<string>('Procesando...');
 
-  // Resultado
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultMimeType, setResultMimeType] = useState<string>('image/webp');
@@ -158,7 +165,6 @@ export default function Home() {
         setResultUrl(objUrl);
         setResultMimeType('image/png');
       } else {
-        // 1. Generar animación base con Canvas en el navegador
         const gifBlob = await convertVideoToGif(videoRef.current, {
           startTime,
           endTime,
@@ -171,7 +177,6 @@ export default function Home() {
           },
         });
 
-        // 2. Si el formato es Sticker para WhatsApp, optimizar a WebP animado con EXIF oficial
         if (format === 'sticker') {
           setProgress(92);
           setStatusText('Aplicando formato oficial de WhatsApp Sticker...');
@@ -180,7 +185,6 @@ export default function Home() {
             const formData = new FormData();
             formData.append('file', gifBlob, 'temp.gif');
 
-            // Timeout de seguridad de 8s para no trabar nunca la interfaz
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
 
@@ -198,7 +202,6 @@ export default function Home() {
               setResultUrl(objUrl);
               setResultMimeType('image/webp');
             } else {
-              // Fallback automático y transparente al GIF animado
               const objUrl = URL.createObjectURL(gifBlob);
               setResultBlob(gifBlob);
               setResultUrl(objUrl);
@@ -323,7 +326,7 @@ export default function Home() {
         </h1>
         <p className="mt-2 text-sm sm:text-base text-zinc-400 max-w-xl">
           Convertí videos de <strong className="text-zinc-200">X (Twitter)</strong> o{' '}
-          <strong className="text-zinc-200">TikTok</strong> en stickers animados reales para
+          <strong className="text-zinc-200">TikTok</strong> en stickers animados para
           WhatsApp en segundos.
         </p>
       </header>
@@ -605,7 +608,7 @@ export default function Home() {
           <section className="bg-zinc-900/90 backdrop-blur-md p-6 rounded-2xl border-2 border-[#25D366]/50 shadow-2xl flex flex-col items-center gap-5">
             <div className="flex items-center gap-2 text-[#25D366] font-semibold text-sm">
               <Check className="w-5 h-5" />
-              ¡Sticker animado generado exitosamente!
+              ¡Sticker generado exitosamente!
             </div>
 
             <div className="p-3 bg-zinc-950 rounded-2xl border border-zinc-800 shadow-inner flex flex-col items-center">
@@ -624,51 +627,83 @@ export default function Home() {
                   <span>Peso: <strong>{(resultBlob.size / 1024).toFixed(1)} KB</strong></span>
                   &bull;
                   <span className="text-[#25D366]">
-                    {resultMimeType === 'image/webp' ? 'Formato Oficial WebP Animado (WhatsApp)' : 'Formato GIF'}
+                    {resultMimeType === 'image/webp' ? 'Formato WebP 512x512' : 'Formato GIF'}
                   </span>
                 </div>
               )}
             </div>
 
-            <div className="w-full bg-amber-950/30 border border-amber-800/40 rounded-xl p-3 text-xs text-amber-200/90 flex items-start gap-2.5">
-              <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="font-semibold text-amber-300">
-                  ¿Cómo enviarlo animado sin que quede estático?
-                </p>
+            {/* AVISO ESPECIAL PARA IPHONE / IOS */}
+            {isIOS ? (
+              <div className="w-full bg-[#1c2a38] border border-sky-500/40 rounded-2xl p-4 text-xs text-sky-100 flex flex-col gap-3">
+                <div className="flex items-center gap-2 font-bold text-sky-300 text-sm">
+                  <Apple className="w-4 h-4 text-sky-400" />
+                  ¿Por qué en iPhone el botón &ldquo;Compartir&rdquo; lo manda como GIF?
+                </div>
                 <p className="text-zinc-300 leading-relaxed">
-                  📱 <strong>En Celular</strong>: Tocá <strong className="text-[#25D366]">Compartir en WhatsApp</strong> y se envía directo como sticker animado.
+                  Apple bloquea que apps externas creen stickers directo desde la hoja de compartir; WhatsApp en iOS solo admite crear stickers desde adentro de su propia app.
                 </p>
-                <p className="text-zinc-300 leading-relaxed">
-                  💻 <strong>En WhatsApp Web (PC)</strong>: Tocá <strong className="text-white">Descargar Sticker</strong> y <strong className="text-[#25D366]">arrastrá el archivo adentro del chat</strong> (o tocá el clip de adjuntar).
-                </p>
+                <div className="bg-zinc-950/60 p-3 rounded-xl border border-sky-500/20 space-y-2">
+                  <p className="font-semibold text-sky-200">
+                    🎯 El truco de 2 segundos para iPhone:
+                  </p>
+                  <ol className="list-decimal pl-4 space-y-1.5 text-zinc-300">
+                    <li>
+                      Tocá el botón verde <strong className="text-white">Guardar en Fotos / Descargar</strong>.
+                    </li>
+                    <li>
+                      Abrí WhatsApp en tu iPhone y entrá a cualquier chat.
+                    </li>
+                    <li>
+                      Tocá el ícono de stickers en el teclado y presioná el botón <strong className="text-[#25D366]">&ldquo;Crear&rdquo; (+)</strong>.
+                    </li>
+                    <li>
+                      Elegí el sticker que acabás de guardar: ¡WhatsApp lo envía como sticker real y le podés poner la estrella ⭐!
+                    </li>
+                  </ol>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="w-full bg-amber-950/30 border border-amber-800/40 rounded-xl p-3 text-xs text-amber-200/90 flex items-start gap-2.5">
+                <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-amber-300">
+                    Cómo enviarlo en WhatsApp sin que quede como GIF:
+                  </p>
+                  <p className="text-zinc-300 leading-relaxed">
+                    📱 <strong>En Android</strong>: Tocá <strong className="text-[#25D366]">Compartir en WhatsApp</strong> y se envía como sticker.
+                  </p>
+                  <p className="text-zinc-300 leading-relaxed">
+                    💻 <strong>En WhatsApp Web</strong>: Descargá el archivo y arrastralo adentro del chat (o tocalo con el botón de stickers &ldquo;+&rdquo;).
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="w-full flex flex-col sm:flex-row gap-3">
               <button
-                onClick={handleShareWhatsApp}
-                className="flex-1 py-3.5 px-4 bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#25D366]/25 active:scale-95"
+                onClick={handleDownload}
+                className="flex-1 py-3.5 px-5 bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-[#25D366]/25"
               >
-                <Share2 className="w-5 h-5" />
-                <span>{shared ? '¡Compartido!' : 'Compartir en WhatsApp'}</span>
+                <Download className="w-5 h-5 text-black" />
+                <span>Guardar Sticker ({resultMimeType === 'image/webp' ? '.webp' : '.gif'})</span>
               </button>
 
               <button
-                onClick={handleDownload}
-                className="py-3.5 px-5 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95 border border-zinc-700"
+                onClick={handleShareWhatsApp}
+                className="py-3.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95 border border-zinc-700"
               >
-                <Download className="w-4 h-4 text-[#25D366]" />
-                <span>Descargar Sticker ({resultMimeType === 'image/webp' ? '.webp' : '.gif'})</span>
+                <Share2 className="w-4 h-4" />
+                <span>Compartir</span>
               </button>
 
               <button
                 onClick={handleCopyImage}
-                title="Copia la miniatura para previsualización"
+                title="Copia la imagen para pegar en WhatsApp Web"
                 className="py-3.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-[#25D366]" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Copiado' : 'Copiar Miniatura'}</span>
+                <span>{copied ? 'Copiado' : 'Copiar'}</span>
               </button>
             </div>
           </section>
