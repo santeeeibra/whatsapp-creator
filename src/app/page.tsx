@@ -1,6 +1,7 @@
-﻿'use client';
+'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Share2,
   Download,
@@ -17,17 +18,20 @@ import {
   Smartphone,
   Info,
   Apple,
+  Zap,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { convertVideoToGif, captureCurrentFrame } from '@/lib/converter';
 
 type Platform = 'twitter' | 'tiktok' | 'direct' | 'local' | null;
 
-export default function Home() {
+function CreatorApp() {
+  const searchParams = useSearchParams();
   const [url, setUrl] = useState('');
   const [isLoadingUrl, setIsLoadingUrl] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isIOS, setIsIOS] = useState(false);
+  const [showShortcutModal, setShowShortcutModal] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -97,6 +101,15 @@ export default function Home() {
       setIsLoadingUrl(false);
     }
   };
+
+  useEffect(() => {
+    const paramUrl = searchParams.get('url');
+    if (paramUrl) {
+      setUrl(paramUrl);
+      handleExtractUrl(paramUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const handleFileUpload = (file: File) => {
     if (!file.type.startsWith('video/')) {
@@ -317,9 +330,19 @@ export default function Home() {
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#25D366]/10 blur-[130px] pointer-events-none rounded-full" />
 
       <header className="w-full max-w-3xl flex flex-col items-center text-center my-6 relative z-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#25D366]/15 border border-[#25D366]/30 text-[#25D366] text-xs font-semibold uppercase tracking-wider mb-3">
-          <Sparkles className="w-3.5 h-3.5" />
-          Stickers Animados WebP (512x512) para WhatsApp
+        <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#25D366]/15 border border-[#25D366]/30 text-[#25D366] text-xs font-semibold uppercase tracking-wider">
+            <Sparkles className="w-3.5 h-3.5" />
+            Stickers Animados WebP (512x512) para WhatsApp
+          </div>
+
+          <button
+            onClick={() => setShowShortcutModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold hover:bg-sky-500/25 transition-colors cursor-pointer"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Atajo iPhone (iOS)
+          </button>
         </div>
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
           De Video a Sticker en 1 Click
@@ -709,6 +732,65 @@ export default function Home() {
           </section>
         )}
 
+        {/* Modal / Sección de Configuración del Atajo de iPhone */}
+        {showShortcutModal && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sky-400 font-bold text-base">
+                  <Zap className="w-5 h-5" />
+                  Atajo de iPhone (Siri Shortcuts)
+                </div>
+                <button
+                  onClick={() => setShowShortcutModal(false)}
+                  className="text-zinc-400 hover:text-white text-sm cursor-pointer"
+                >
+                  Cerrar ✕
+                </button>
+              </div>
+
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                Podés crear un atajo en la app <strong>Atajos (Shortcuts)</strong> de tu iPhone para que,
+                al tocar <strong>Compartir</strong> en cualquier tweet o video de TikTok, se abra la web
+                con el video ya cargado automáticamente.
+              </p>
+
+              <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800 space-y-3 text-xs">
+                <p className="font-semibold text-sky-300">
+                  Pasos para crearlo en 30 segundos:
+                </p>
+                <ol className="list-decimal pl-4 space-y-2 text-zinc-300">
+                  <li>
+                    Abrí la app <strong>Atajos</strong> en tu iPhone y tocá <strong>&ldquo;+&rdquo;</strong> (Nuevo Atajo).
+                  </li>
+                  <li>
+                    Tocá la <strong>(i)</strong> de abajo y activá: <strong>&ldquo;Mostrar en la hoja para compartir&rdquo;</strong>.
+                  </li>
+                  <li>
+                    Agregá la acción: <strong>&ldquo;Abrir URLs&rdquo;</strong>.
+                  </li>
+                  <li>
+                    Pegá este formato en la URL:
+                    <div className="mt-1 p-2 bg-zinc-900 font-mono text-[11px] text-[#25D366] rounded select-all break-all">
+                      https://whatsapp-creator-santeeeibra.vercel.app/?url=[Entrada del atajo]
+                    </div>
+                  </li>
+                  <li>
+                    ¡Listo! Nombralo <strong>&ldquo;Crear Sticker WhatsApp&rdquo;</strong>.
+                  </li>
+                </ol>
+              </div>
+
+              <button
+                onClick={() => setShowShortcutModal(false)}
+                className="w-full py-2.5 bg-sky-500 hover:bg-sky-400 text-black font-bold rounded-xl text-xs transition-colors cursor-pointer"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        )}
+
         <footer className="mt-4 p-5 rounded-xl bg-zinc-950/40 border border-zinc-800/60 text-xs text-zinc-400 flex flex-col gap-3">
           <div className="font-semibold text-zinc-300 flex items-center gap-2">
             <Smartphone className="w-4 h-4 text-[#25D366]" />
@@ -725,5 +807,13 @@ export default function Home() {
         </footer>
       </div>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0b0f17] text-white flex items-center justify-center">Cargando...</div>}>
+      <CreatorApp />
+    </Suspense>
   );
 }
