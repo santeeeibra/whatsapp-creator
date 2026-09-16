@@ -43,6 +43,7 @@ export default function Home() {
   const [fps, setFps] = useState<number>(12);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState<string>('Procesando...');
 
   // Resultado
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
@@ -146,6 +147,7 @@ export default function Home() {
 
     setIsProcessing(true);
     setProgress(0);
+    setStatusText('Capturando fotogramas...');
     setErrorMessage(null);
 
     try {
@@ -163,28 +165,47 @@ export default function Home() {
           fps,
           width: format === 'sticker' ? 320 : 400,
           isSquare: format === 'sticker',
-          onProgress: (p) => setProgress(Math.min(90, Math.round(p * 0.9))),
+          onProgress: (p) => {
+            setProgress(Math.min(90, Math.round(p * 0.9)));
+            setStatusText(`Procesando video (${Math.round(p)}%)...`);
+          },
         });
 
-        // 2. Si el formato es Sticker para WhatsApp, optimizar a WebP animado de 512x512
+        // 2. Si el formato es Sticker para WhatsApp, optimizar a WebP animado con EXIF oficial
         if (format === 'sticker') {
-          setProgress(95);
-          const formData = new FormData();
-          formData.append('file', gifBlob, 'temp.gif');
+          setProgress(92);
+          setStatusText('Aplicando formato oficial de WhatsApp Sticker...');
 
-          const resWebp = await fetch('/api/to-webp', {
-            method: 'POST',
-            body: formData,
-          });
+          try {
+            const formData = new FormData();
+            formData.append('file', gifBlob, 'temp.gif');
 
-          if (resWebp.ok) {
-            const webpBlob = await resWebp.blob();
-            const objUrl = URL.createObjectURL(webpBlob);
-            setResultBlob(webpBlob);
-            setResultUrl(objUrl);
-            setResultMimeType('image/webp');
-          } else {
-            // Fallback a GIF directo si el servidor falla
+            // Timeout de seguridad de 8s para no trabar nunca la interfaz
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+            const resWebp = await fetch('/api/to-webp', {
+              method: 'POST',
+              body: formData,
+              signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+
+            if (resWebp.ok) {
+              const webpBlob = await resWebp.blob();
+              const objUrl = URL.createObjectURL(webpBlob);
+              setResultBlob(webpBlob);
+              setResultUrl(objUrl);
+              setResultMimeType('image/webp');
+            } else {
+              // Fallback automático y transparente al GIF animado
+              const objUrl = URL.createObjectURL(gifBlob);
+              setResultBlob(gifBlob);
+              setResultUrl(objUrl);
+              setResultMimeType('image/gif');
+            }
+          } catch (webpErr) {
+            console.warn('Fallback a GIF seguro:', webpErr);
             const objUrl = URL.createObjectURL(gifBlob);
             setResultBlob(gifBlob);
             setResultUrl(objUrl);
@@ -199,6 +220,7 @@ export default function Home() {
       }
 
       setProgress(100);
+      setStatusText('¡Listo!');
 
       confetti({
         particleCount: 80,
@@ -237,7 +259,6 @@ export default function Home() {
       }
     }
 
-    // Si está en PC, descargar automáticamente para que lo arrastre a WhatsApp Web
     handleDownload();
   };
 
@@ -557,7 +578,7 @@ export default function Home() {
               {isProcessing ? (
                 <>
                   <RefreshCw className="w-5 h-5 animate-spin" />
-                  <span>Optimizando Sticker ({progress}%)...</span>
+                  <span>{statusText}</span>
                 </>
               ) : (
                 <>
@@ -587,7 +608,6 @@ export default function Home() {
               ¡Sticker animado generado exitosamente!
             </div>
 
-            {/* Visualizador del resultado con drag directo */}
             <div className="p-3 bg-zinc-950 rounded-2xl border border-zinc-800 shadow-inner flex flex-col items-center">
               <div className="relative w-64 h-64 flex items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-zinc-900 to-black cursor-grab active:cursor-grabbing">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -610,25 +630,21 @@ export default function Home() {
               )}
             </div>
 
-            {/* AVISO CLAVE SOBRE WHATSAPP WEB Y PORTAPAPELES */}
             <div className="w-full bg-amber-950/30 border border-amber-800/40 rounded-xl p-3 text-xs text-amber-200/90 flex items-start gap-2.5">
               <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <p className="font-semibold text-amber-300">
-                  ¿Por qué al pegar con Ctrl+V se envía estático?
+                  ¿Cómo enviarlo animado sin que quede estático?
                 </p>
                 <p className="text-zinc-300 leading-relaxed">
-                  Por seguridad, los navegadores (Chrome, Edge) solo permiten copiar <strong>imágenes estáticas (PNG)</strong> al portapapeles.
+                  📱 <strong>En Celular</strong>: Tocá <strong className="text-[#25D366]">Compartir en WhatsApp</strong> y se envía directo como sticker animado.
                 </p>
                 <p className="text-zinc-300 leading-relaxed">
-                  🎯 <strong>Para que se mueva en bucle en WhatsApp Web:</strong> Tocá{' '}
-                  <strong className="text-white">Descargar Sticker</strong> y{' '}
-                  <strong className="text-[#25D366]">arrastrá el archivo directamente adentro de tu chat</strong>. ¡WhatsApp lo detectará de inmediato como sticker animado!
+                  💻 <strong>En WhatsApp Web (PC)</strong>: Tocá <strong className="text-white">Descargar Sticker</strong> y <strong className="text-[#25D366]">arrastrá el archivo adentro del chat</strong> (o tocá el clip de adjuntar).
                 </p>
               </div>
             </div>
 
-            {/* Botones de acción rápida */}
             <div className="w-full flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleShareWhatsApp}
@@ -648,7 +664,7 @@ export default function Home() {
 
               <button
                 onClick={handleCopyImage}
-                title="Copia el primer frame estático para previsualización"
+                title="Copia la miniatura para previsualización"
                 className="py-3.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs rounded-xl transition-all flex items-center justify-center gap-1.5"
               >
                 {copied ? <Check className="w-3.5 h-3.5 text-[#25D366]" /> : <Copy className="w-3.5 h-3.5" />}
