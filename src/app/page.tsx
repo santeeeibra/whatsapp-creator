@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, Suspense } from 'react';
+import Image from 'next/image';
 import { useSearchParams } from 'next/navigation';
 import {
   Share2,
@@ -331,9 +332,9 @@ function CreatorApp() {
         <a
           href="/"
           aria-label="WhatsApp Creator: volver al inicio"
-          className="mb-4 inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-[#25D366] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#25D366]"
+          className="mb-4 inline-flex items-center gap-2 rounded-lg text-base font-semibold text-[#25D366] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#25D366]"
         >
-          <Sparkles aria-hidden="true" className="w-5 h-5" />
+          <Image src="/logo.png" alt="" width={44} height={44} preload className="shrink-0" />
           WhatsApp Creator
         </a>
         <div className="flex flex-wrap items-center justify-center gap-2 mb-3">

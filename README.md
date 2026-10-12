@@ -1,4 +1,6 @@
-﻿# [🚀 WhatsApp Creator — Video to Sticker & GIF (1 Click)](https://whatsapp-creator.vercel.app/)
+﻿[<img src="public/logo.png" alt="Logo de WhatsApp Creator" width="96" height="96">](https://whatsapp-creator.vercel.app/)
+
+# [WhatsApp Creator — Video to Sticker & GIF (1 Click)](https://whatsapp-creator.vercel.app/)
 
 [Abrir la app](https://whatsapp-creator.vercel.app/) · [Versión en pruebas: corrección de GIF animado](https://whatsapp-creator-git-fix-gif-animado-movi3.vercel.app/)
 
