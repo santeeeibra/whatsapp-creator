@@ -13,6 +13,53 @@ export async function convertVideoToGif(
   video: HTMLVideoElement,
   options: ConvertOptions
 ): Promise<Blob> {
+  // Capturar desde un archivo completo evita depender de los seeks HTTP del CDN
+  // y de los eventos/controles del reproductor de la vista previa.
+  const response = await fetch(video.currentSrc || video.src, {
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) throw new Error('No se pudo descargar el video para convertirlo');
+  const source = await response.blob();
+  const objectUrl = URL.createObjectURL(source);
+  const captureVideo = document.createElement('video');
+  captureVideo.muted = true;
+  captureVideo.playsInline = true;
+  captureVideo.preload = 'auto';
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        captureVideo.removeEventListener('loadeddata', onLoaded);
+        captureVideo.removeEventListener('error', onError);
+      };
+      const onLoaded = () => { cleanup(); resolve(); };
+      const onError = () => {
+        cleanup();
+        reject(new Error('No se pudo decodificar el video'));
+      };
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('El video no terminó de cargar. Intentá nuevamente.'));
+      }, 15_000);
+      captureVideo.addEventListener('loadeddata', onLoaded);
+      captureVideo.addEventListener('error', onError);
+      captureVideo.src = objectUrl;
+      captureVideo.load();
+    });
+    return await encodeVideoToGif(captureVideo, options);
+  } finally {
+    captureVideo.pause();
+    captureVideo.removeAttribute('src');
+    captureVideo.load();
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function encodeVideoToGif(
+  video: HTMLVideoElement,
+  options: ConvertOptions
+): Promise<Blob> {
   const {
     startTime,
     endTime,
@@ -23,8 +70,11 @@ export async function convertVideoToGif(
   } = options;
 
   const duration = endTime - startTime;
-  if (duration <= 0) {
-    throw new Error('La duración del clip debe ser mayor a 0');
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(startTime) || startTime < 0 || endTime > video.duration) {
+    throw new Error('Seleccioná un fragmento válido dentro del video');
+  }
+  if (!Number.isFinite(fps) || fps <= 0 || !Number.isInteger(width) || width <= 0) {
+    throw new Error('La resolución y los FPS deben ser mayores a 0');
   }
 
   // Dimensiones del lienzo
@@ -50,39 +100,54 @@ export async function convertVideoToGif(
 
   const gif = GIFEncoder();
   const frameInterval = 1 / fps;
-  const totalFrames = Math.max(1, Math.floor(duration * fps));
+  const totalFrames = Math.max(1, Math.ceil(duration * fps));
   let currentFrame = 0;
 
   // Función para esperar a que el video salte al segundo exacto
   const seekTo = (time: number): Promise<void> => {
-    return new Promise((resolve) => {
-      let resolved = false;
+    if (!video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - time) < 0.001) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        video.removeEventListener('seeked', onSeeked);
+        video.removeEventListener('loadeddata', onSeeked);
+        video.removeEventListener('error', onError);
+      };
       const onSeeked = () => {
-        if (!resolved) {
-          resolved = true;
-          video.removeEventListener('seeked', onSeeked);
+        if (!video.seeking && video.readyState >= 2 && Math.abs(video.currentTime - time) < 0.001) {
+          cleanup();
           resolve();
         }
       };
-
+      const onError = () => {
+        cleanup();
+        reject(new Error('No se pudo decodificar un fotograma del video'));
+      };
+      // Un timeout es un error: nunca codificar el cuadro anterior como si fuera el nuevo.
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('No se pudo cargar un fotograma. Intentá nuevamente.'));
+      }, 15_000);
       video.addEventListener('seeked', onSeeked);
-      video.currentTime = Math.min(time, video.duration || time);
-
-      // Timeout de seguridad por si el evento no dispara
-      setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          video.removeEventListener('seeked', onSeeked);
-          resolve();
-        }
-      }, 500);
+      video.addEventListener('loadeddata', onSeeked);
+      video.addEventListener('error', onError);
+      try {
+        video.currentTime = time;
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
     });
   };
 
   // Pausar video durante la captura frame a frame
   video.pause();
 
-  for (let t = startTime; t <= endTime; t += frameInterval) {
+  // El extremo final queda excluido: no capturar EOF ni disparar el bucle de preview.
+  for (let frame = 0; frame < totalFrames; frame++) {
+    const t = startTime + frame * frameInterval;
     await seekTo(t);
 
     ctx.clearRect(0, 0, renderWidth, renderHeight);
@@ -121,7 +186,7 @@ export async function convertVideoToGif(
 
   gif.finish();
   const bytes = gif.bytes();
-  return new Blob([bytes as any], { type: 'image/gif' });
+  return new Blob([new Uint8Array(bytes)], { type: 'image/gif' });
 }
 
 export async function captureCurrentFrame(
@@ -129,8 +194,8 @@ export async function captureCurrentFrame(
   isSquare = false
 ): Promise<Blob> {
   const canvas = document.createElement('canvas');
-  let w = video.videoWidth || 640;
-  let h = video.videoHeight || 360;
+  const w = video.videoWidth || 640;
+  const h = video.videoHeight || 360;
 
   if (isSquare) {
     const minDim = Math.min(w, h);

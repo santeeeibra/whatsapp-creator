@@ -60,6 +60,7 @@ function CreatorApp() {
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultMimeType, setResultMimeType] = useState<string>('image/webp');
+  const [resultNotice, setResultNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
 
@@ -77,6 +78,7 @@ function CreatorApp() {
     setErrorMessage(null);
     setResultBlob(null);
     setResultUrl(null);
+    setResultNotice(null);
 
     try {
       const res = await fetch('/api/extract', {
@@ -120,6 +122,7 @@ function CreatorApp() {
     setErrorMessage(null);
     setResultBlob(null);
     setResultUrl(null);
+    setResultNotice(null);
 
     const objectUrl = URL.createObjectURL(file);
     setVideoSrc(objectUrl);
@@ -169,6 +172,11 @@ function CreatorApp() {
     setProgress(0);
     setStatusText('Capturando fotogramas...');
     setErrorMessage(null);
+    setResultNotice(null);
+    setResultBlob(null);
+    setResultUrl(null);
+    videoRef.current.pause();
+    setIsPlaying(false);
 
     try {
       if (format === 'photo') {
@@ -199,14 +207,18 @@ function CreatorApp() {
             formData.append('file', gifBlob, 'temp.gif');
 
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const timeoutId = setTimeout(() => controller.abort(), 35_000);
 
-            const resWebp = await fetch('/api/to-webp', {
-              method: 'POST',
-              body: formData,
-              signal: controller.signal,
-            });
-            clearTimeout(timeoutId);
+            let resWebp: Response;
+            try {
+              resWebp = await fetch('/api/to-webp', {
+                method: 'POST',
+                body: formData,
+                signal: controller.signal,
+              });
+            } finally {
+              clearTimeout(timeoutId);
+            }
 
             if (resWebp.ok) {
               const webpBlob = await resWebp.blob();
@@ -215,6 +227,7 @@ function CreatorApp() {
               setResultUrl(objUrl);
               setResultMimeType('image/webp');
             } else {
+              setResultNotice('No se pudo crear el sticker WebP. Podés descargar el GIF animado o volver a intentar.');
               const objUrl = URL.createObjectURL(gifBlob);
               setResultBlob(gifBlob);
               setResultUrl(objUrl);
@@ -222,6 +235,7 @@ function CreatorApp() {
             }
           } catch (webpErr) {
             console.warn('Fallback a GIF seguro:', webpErr);
+            setResultNotice('No se pudo crear el sticker WebP. Podés descargar el GIF animado o volver a intentar.');
             const objUrl = URL.createObjectURL(gifBlob);
             setResultBlob(gifBlob);
             setResultUrl(objUrl);
@@ -279,29 +293,12 @@ function CreatorApp() {
   };
 
   const handleCopyImage = async () => {
-    if (!resultBlob) return;
+    if (!resultBlob || resultMimeType !== 'image/png') return;
 
     try {
-      let clipboardBlob = resultBlob;
-      if (resultBlob.type !== 'image/png') {
-        const img = new Image();
-        img.src = resultUrl!;
-        await new Promise((res) => (img.onload = res));
-
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || 320;
-        canvas.height = img.naturalHeight || 320;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0);
-
-        clipboardBlob = await new Promise<Blob>((res) =>
-          canvas.toBlob((b) => res(b!), 'image/png')
-        );
-      }
-
       await navigator.clipboard.write([
         new ClipboardItem({
-          'image/png': clipboardBlob,
+          'image/png': resultBlob,
         }),
       ]);
 
@@ -324,12 +321,21 @@ function CreatorApp() {
 
   const clipDuration = Math.max(0, endTime - startTime).toFixed(1);
   const isOptimalForWhatsApp = parseFloat(clipDuration) <= 5.0;
+  const isStickerTooLarge = resultMimeType === 'image/webp' && resultBlob !== null && resultBlob.size > 500 * 1024;
 
   return (
     <main className="min-h-screen bg-[#0b0f17] text-white flex flex-col items-center justify-start p-4 sm:p-8 font-sans selection:bg-[#25D366] selection:text-black">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#25D366]/10 blur-[130px] pointer-events-none rounded-full" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[600px] h-[300px] bg-[#25D366]/10 blur-[130px] pointer-events-none rounded-full" />
 
       <header className="w-full max-w-3xl flex flex-col items-center text-center my-6 relative z-10">
+        <a
+          href="/"
+          aria-label="WhatsApp Creator: volver al inicio"
+          className="mb-4 inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-[#25D366] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#25D366]"
+        >
+          <Sparkles aria-hidden="true" className="w-5 h-5" />
+          WhatsApp Creator
+        </a>
         <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#25D366]/15 border border-[#25D366]/30 text-[#25D366] text-xs font-semibold uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5" />
@@ -579,7 +585,7 @@ function CreatorApp() {
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    10 FPS (Ligero &lt;500KB)
+                    10 FPS (Menor peso)
                   </button>
                   <button
                     onClick={() => setFps(15)}
@@ -631,7 +637,7 @@ function CreatorApp() {
           <section className="bg-zinc-900/90 backdrop-blur-md p-6 rounded-2xl border-2 border-[#25D366]/50 shadow-2xl flex flex-col items-center gap-5">
             <div className="flex items-center gap-2 text-[#25D366] font-semibold text-sm">
               <Check className="w-5 h-5" />
-              ¡Sticker generado exitosamente!
+              {resultMimeType === 'image/webp' ? '¡Sticker generado!' : resultMimeType === 'image/gif' ? '¡GIF animado generado!' : '¡Foto generada!'}
             </div>
 
             <div className="p-3 bg-zinc-950 rounded-2xl border border-zinc-800 shadow-inner flex flex-col items-center">
@@ -650,11 +656,41 @@ function CreatorApp() {
                   <span>Peso: <strong>{(resultBlob.size / 1024).toFixed(1)} KB</strong></span>
                   &bull;
                   <span className="text-[#25D366]">
-                    {resultMimeType === 'image/webp' ? 'Formato WebP 512x512' : 'Formato GIF'}
+                    {resultMimeType === 'image/webp' ? 'Formato WebP 512x512' : resultMimeType === 'image/png' ? 'Formato PNG' : 'Formato GIF animado'}
                   </span>
                 </div>
               )}
             </div>
+
+            {resultNotice && (
+              <p role="status" className="text-xs text-amber-200">{resultNotice}</p>
+            )}
+            {isStickerTooLarge && (
+              <div role="status" className="w-full rounded-xl border border-amber-800/40 bg-amber-950/30 p-3 text-xs text-amber-200">
+                <p>
+                  Este sticker supera 500 KB y puede ser rechazado por WhatsApp. Acortá el clip o usá menos FPS y volvé a generar.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEndTime(startTime + (endTime - startTime) / 2);
+                    setFps(10);
+                    setFormat('sticker');
+                    setResultBlob(null);
+                    setResultUrl(null);
+                    setResultNotice(null);
+                  }}
+                  className="mt-2 rounded-lg border border-amber-700 px-3 py-2 font-semibold hover:bg-amber-900/40"
+                >
+                  Acortar clip a la mitad y usar 10 FPS
+                </button>
+              </div>
+            )}
+            {resultMimeType !== 'image/png' && (
+              <p className="text-xs text-zinc-300">
+                Para conservar la animación, descargá o compartí el archivo. Copiar como imagen lo convierte en una foto fija.
+              </p>
+            )}
 
             {/* AVISO ESPECIAL PARA IPHONE / IOS */}
             {isIOS ? (
@@ -709,7 +745,7 @@ function CreatorApp() {
                 className="flex-1 py-3.5 px-5 bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-[#25D366]/25"
               >
                 <Download className="w-5 h-5 text-black" />
-                <span>Guardar Sticker ({resultMimeType === 'image/webp' ? '.webp' : '.gif'})</span>
+                <span>Guardar {resultMimeType === 'image/webp' ? 'Sticker (.webp)' : resultMimeType === 'image/png' ? 'Foto (.png)' : 'GIF (.gif)'}</span>
               </button>
 
               <button
@@ -720,6 +756,7 @@ function CreatorApp() {
                 <span>Compartir</span>
               </button>
 
+              {resultMimeType === 'image/png' && (
               <button
                 onClick={handleCopyImage}
                 title="Copia la imagen para pegar en WhatsApp Web"
@@ -728,6 +765,7 @@ function CreatorApp() {
                 {copied ? <Check className="w-3.5 h-3.5 text-[#25D366]" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copied ? 'Copiado' : 'Copiar'}</span>
               </button>
+              )}
             </div>
           </section>
         )}
@@ -772,7 +810,7 @@ function CreatorApp() {
                   <li>
                     Pegá este formato en la URL:
                     <div className="mt-1 p-2 bg-zinc-900 font-mono text-[11px] text-[#25D366] rounded select-all break-all">
-                      https://whatsapp-creator-santeeeibra.vercel.app/?url=[Entrada del atajo]
+                      https://whatsapp-creator.vercel.app/?url=[Entrada del atajo]
                     </div>
                   </li>
                   <li>
