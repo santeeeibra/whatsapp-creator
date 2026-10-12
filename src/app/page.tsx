@@ -321,12 +321,21 @@ function CreatorApp() {
 
   const clipDuration = Math.max(0, endTime - startTime).toFixed(1);
   const isOptimalForWhatsApp = parseFloat(clipDuration) <= 5.0;
+  const isStickerTooLarge = resultMimeType === 'image/webp' && resultBlob !== null && resultBlob.size > 500 * 1024;
 
   return (
     <main className="min-h-screen bg-[#0b0f17] text-white flex flex-col items-center justify-start p-4 sm:p-8 font-sans selection:bg-[#25D366] selection:text-black">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-[#25D366]/10 blur-[130px] pointer-events-none rounded-full" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[600px] h-[300px] bg-[#25D366]/10 blur-[130px] pointer-events-none rounded-full" />
 
       <header className="w-full max-w-3xl flex flex-col items-center text-center my-6 relative z-10">
+        <a
+          href="/"
+          aria-label="WhatsApp Creator: volver al inicio"
+          className="mb-4 inline-flex items-center gap-2 rounded-lg text-sm font-semibold text-[#25D366] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#25D366]"
+        >
+          <Sparkles aria-hidden="true" className="w-5 h-5" />
+          WhatsApp Creator
+        </a>
         <div className="flex flex-wrap items-center justify-center gap-2 mb-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#25D366]/15 border border-[#25D366]/30 text-[#25D366] text-xs font-semibold uppercase tracking-wider">
             <Sparkles className="w-3.5 h-3.5" />
@@ -576,7 +585,7 @@ function CreatorApp() {
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    10 FPS (Ligero &lt;500KB)
+                    10 FPS (Menor peso)
                   </button>
                   <button
                     onClick={() => setFps(15)}
@@ -655,6 +664,27 @@ function CreatorApp() {
 
             {resultNotice && (
               <p role="status" className="text-xs text-amber-200">{resultNotice}</p>
+            )}
+            {isStickerTooLarge && (
+              <div role="status" className="w-full rounded-xl border border-amber-800/40 bg-amber-950/30 p-3 text-xs text-amber-200">
+                <p>
+                  Este sticker supera 500 KB y puede ser rechazado por WhatsApp. Acortá el clip o usá menos FPS y volvé a generar.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEndTime(startTime + (endTime - startTime) / 2);
+                    setFps(10);
+                    setFormat('sticker');
+                    setResultBlob(null);
+                    setResultUrl(null);
+                    setResultNotice(null);
+                  }}
+                  className="mt-2 rounded-lg border border-amber-700 px-3 py-2 font-semibold hover:bg-amber-900/40"
+                >
+                  Acortar clip a la mitad y usar 10 FPS
+                </button>
+              </div>
             )}
             {resultMimeType !== 'image/png' && (
               <p className="text-xs text-zinc-300">
@@ -780,7 +810,7 @@ function CreatorApp() {
                   <li>
                     Pegá este formato en la URL:
                     <div className="mt-1 p-2 bg-zinc-900 font-mono text-[11px] text-[#25D366] rounded select-all break-all">
-                      https://whatsapp-creator-santeeeibra.vercel.app/?url=[Entrada del atajo]
+                      https://whatsapp-creator.vercel.app/?url=[Entrada del atajo]
                     </div>
                   </li>
                   <li>
