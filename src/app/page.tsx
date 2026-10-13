@@ -745,14 +745,14 @@ function CreatorApp() {
                       Abrí Sticker.ly, creá un paquete de tipo <strong>Animado</strong> y seleccioná el GIF.
                     </li>
                     <li>
-                      Agregá tus stickers al paquete y usá <strong>Añadir a WhatsApp</strong> si está disponible sin pagar.
+                      Agregá tus stickers al paquete y usá <strong>Añadir a WhatsApp</strong>. Completá los anuncios de la opción gratuita.
                     </li>
                     <li>
                       Comprobá en WhatsApp que aparezcan en el paquete y conserven la animación.
                     </li>
                   </ol>
                   <p className="text-zinc-400">
-                    Sticker.ly se descarga gratis y ofrece compras dentro de la app. Este flujo está documentado por su desarrollador; la importación gratuita en iPhone todavía necesita comprobarse.
+                    Podés completar la importación sin pagar, viendo anuncios. Sticker.ly también ofrece compras dentro de la app; usá las opciones gratuitas para este flujo.
                   </p>
                   <div className="flex flex-wrap gap-3">
                     <a href="https://apps.apple.com/ar/app/sticker-ly-wasticker/id1458740001" target="_blank" rel="noopener noreferrer" className="text-sky-300 underline">Ver Sticker.ly en App Store</a>
