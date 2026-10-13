@@ -59,6 +59,7 @@ function CreatorApp() {
   const [statusText, setStatusText] = useState<string>('Procesando...');
 
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
+  const [animatedGifBlob, setAnimatedGifBlob] = useState<Blob | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultMimeType, setResultMimeType] = useState<string>('image/webp');
   const [resultNotice, setResultNotice] = useState<string | null>(null);
@@ -78,6 +79,7 @@ function CreatorApp() {
     setIsLoadingUrl(true);
     setErrorMessage(null);
     setResultBlob(null);
+    setAnimatedGifBlob(null);
     setResultUrl(null);
     setResultNotice(null);
 
@@ -122,6 +124,7 @@ function CreatorApp() {
 
     setErrorMessage(null);
     setResultBlob(null);
+    setAnimatedGifBlob(null);
     setResultUrl(null);
     setResultNotice(null);
 
@@ -175,6 +178,7 @@ function CreatorApp() {
     setErrorMessage(null);
     setResultNotice(null);
     setResultBlob(null);
+    setAnimatedGifBlob(null);
     setResultUrl(null);
     videoRef.current.pause();
     setIsPlaying(false);
@@ -198,6 +202,7 @@ function CreatorApp() {
             setStatusText(`Procesando video (${Math.round(p)}%)...`);
           },
         });
+        setAnimatedGifBlob(gifBlob);
 
         if (format === 'sticker') {
           setProgress(92);
@@ -309,6 +314,30 @@ function CreatorApp() {
       console.error(err);
       handleDownload();
     }
+  };
+
+  const handleDownloadGif = () => {
+    if (!animatedGifBlob) return;
+    const gifUrl = URL.createObjectURL(animatedGifBlob);
+    const link = document.createElement('a');
+    link.href = gifUrl;
+    link.download = `sticker-animado-${Date.now()}.gif`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(gifUrl), 1000);
+  };
+
+  const handleShareGif = async () => {
+    if (!animatedGifBlob) return;
+    const file = new File([animatedGifBlob], 'sticker-animado.gif', { type: 'image/gif' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'GIF animado para importar como sticker' });
+        return;
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
+      }
+    }
+    handleDownloadGif();
   };
 
   const handleDownload = () => {
@@ -678,6 +707,7 @@ function CreatorApp() {
                     setFps(10);
                     setFormat('sticker');
                     setResultBlob(null);
+                    setAnimatedGifBlob(null);
                     setResultUrl(null);
                     setResultNotice(null);
                   }}
@@ -694,35 +724,52 @@ function CreatorApp() {
             )}
 
             {/* AVISO ESPECIAL PARA IPHONE / IOS */}
-            {isIOS ? (
+            {isIOS && resultMimeType !== 'image/png' ? (
               <div className="w-full bg-[#1c2a38] border border-sky-500/40 rounded-2xl p-4 text-xs text-sky-100 flex flex-col gap-3">
                 <div className="flex items-center gap-2 font-bold text-sky-300 text-sm">
                   <Apple className="w-4 h-4 text-sky-400" />
-                  ¿Por qué en iPhone el botón &ldquo;Compartir&rdquo; lo manda como GIF?
+                  Llevarlo a un paquete de stickers en iPhone
                 </div>
                 <p className="text-zinc-300 leading-relaxed">
-                  Apple bloquea que apps externas creen stickers directo desde la hoja de compartir; WhatsApp en iOS solo admite crear stickers desde adentro de su propia app.
+                  Compartir el archivo desde Safari no instala un paquete en WhatsApp. Para los animados, podés probar la importación del GIF en una app de stickers compatible.
                 </p>
                 <div className="bg-zinc-950/60 p-3 rounded-xl border border-sky-500/20 space-y-2">
                   <p className="font-semibold text-sky-200">
-                    🎯 El truco de 2 segundos para iPhone:
+                    Probar la importación con Sticker.ly:
                   </p>
                   <ol className="list-decimal pl-4 space-y-1.5 text-zinc-300">
                     <li>
-                      Tocá el botón verde <strong className="text-white">Guardar en Fotos / Descargar</strong>.
+                      Usá <strong className="text-white">Compartir GIF</strong> y, si aparece, <strong>Guardar imagen</strong> para tenerlo en Fotos. <strong>Descargar GIF</strong> lo guarda en las descargas de Safari; si la app solo muestra Fotos, primero necesitás guardar allí el GIF.
                     </li>
                     <li>
-                      Abrí WhatsApp en tu iPhone y entrá a cualquier chat.
+                      Abrí Sticker.ly, creá un paquete de tipo <strong>Animado</strong> y seleccioná el GIF.
                     </li>
                     <li>
-                      Tocá el ícono de stickers en el teclado y presioná el botón <strong className="text-[#25D366]">&ldquo;Crear&rdquo; (+)</strong>.
+                      Agregá tus stickers al paquete y usá <strong>Añadir a WhatsApp</strong> si está disponible sin pagar.
                     </li>
                     <li>
-                      Elegí el sticker que acabás de guardar: ¡WhatsApp lo envía como sticker real y le podés poner la estrella ⭐!
+                      Comprobá en WhatsApp que aparezcan en el paquete y conserven la animación.
                     </li>
                   </ol>
+                  <p className="text-zinc-400">
+                    Sticker.ly se descarga gratis y ofrece compras dentro de la app. Este flujo está documentado por su desarrollador; la importación gratuita en iPhone todavía necesita comprobarse.
+                  </p>
+                  <div className="flex flex-wrap gap-3">
+                    <a href="https://apps.apple.com/ar/app/sticker-ly-wasticker/id1458740001" target="_blank" rel="noopener noreferrer" className="text-sky-300 underline">Ver Sticker.ly en App Store</a>
+                    <a href="https://sticker.ly/faq/es/Preguntas%20Frecuentes%2004820f90533f40088099a080d0d23c64/C%C3%B3mo%20crear%20stickers%20animados%20en%20Sticker%20ly%20bca67e23b1784a529fb7422e001f4704.html" target="_blank" rel="noopener noreferrer" className="text-sky-300 underline">Guía del desarrollador</a>
+                  </div>
+                  {animatedGifBlob && (
+                    <div className="flex flex-wrap gap-2 pt-2">
+                      <button type="button" onClick={handleShareGif} className="rounded-lg bg-sky-500 px-3 py-2 font-semibold text-black hover:bg-sky-400">Compartir GIF</button>
+                      <button type="button" onClick={handleDownloadGif} className="rounded-lg border border-sky-500/40 px-3 py-2 font-semibold hover:bg-sky-900/30">Descargar GIF</button>
+                    </div>
+                  )}
                 </div>
               </div>
+            ) : isIOS ? (
+              <p className="text-xs text-sky-100">
+                Esta captura es una foto fija. Guardala en Fotos y probá crear el sticker desde WhatsApp.
+              </p>
             ) : (
               <div className="w-full bg-amber-950/30 border border-amber-800/40 rounded-xl p-3 text-xs text-amber-200/90 flex items-start gap-2.5">
                 <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />

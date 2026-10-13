@@ -31,6 +31,7 @@ Convertí videos de **X (Twitter)**, **TikTok** o archivos locales a **Stickers 
    - **En Celular (Android / iOS)**: Usa la `Web Share API` nativa (`navigator.share`) para abrir directamente WhatsApp y enviar el archivo de inmediato al contacto o grupo seleccionado.
    - **En Computadora (PC / Mac)**: Descargá el archivo para conservar la animación. El botón **Copiar Imagen** está disponible para capturas PNG.
    - **Descarga directa**: Descarga el archivo `.webp`, `.gif` o `.png` generado en tu dispositivo.
+   - **iPhone**: Al generar un sticker animado se conserva también el GIF original, con botones para descargarlo o abrir la hoja de compartir. La web no instala paquetes directamente. La interfaz enlaza la guía oficial de Sticker.ly para probar la importación de GIFs en un paquete animado; todavía debe comprobarse que esa función esté disponible sin pagar en el iPhone del usuario.
 
 ---
 
