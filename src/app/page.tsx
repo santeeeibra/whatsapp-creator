@@ -23,8 +23,23 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { convertVideoToGif, captureCurrentFrame } from '@/lib/converter';
+import type { StickerAudio } from '@/lib/audio';
+import AudioSticker from '@/components/audio-sticker';
+import { renderVideoWithAudio, canRecordMp4 } from '@/lib/video-with-audio';
+import SoundStickerGuide from '@/components/sound-sticker-guide';
+
+// WhatsApp conserva como máximo 5 s del audio original al crear un sticker desde un video.
+const MAX_SOUND_STICKER_SECONDS = 5;
 
 type Platform = 'twitter' | 'tiktok' | 'direct' | 'local' | null;
+
+function extensionForMime(mime: string): string {
+  if (mime === 'image/webp') return 'webp';
+  if (mime === 'image/png') return 'png';
+  if (mime === 'video/mp4') return 'mp4';
+  if (mime === 'video/webm') return 'webm';
+  return 'gif';
+}
 
 function CreatorApp() {
   const searchParams = useSearchParams();
@@ -52,7 +67,31 @@ function CreatorApp() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
 
-  const [format, setFormat] = useState<'sticker' | 'gif' | 'photo'>('sticker');
+  const [stickerAudio, setStickerAudio] = useState<StickerAudio | null>(null);
+
+  const updateStickerAudio = (next: StickerAudio | null) => {
+    setStickerAudio((prev) => {
+      if (prev && prev.url !== next?.url) URL.revokeObjectURL(prev.url);
+      return next;
+    });
+  };
+
+  // Al cambiar de video, se descarta el audio elegido para el anterior.
+  useEffect(() => {
+    updateStickerAudio(null);
+  }, [videoSrc]);
+
+  const [format, setFormat] = useState<'sticker' | 'gif' | 'photo' | 'video'>('sticker');
+
+  // El formato "video con audio" solo tiene sentido si hay un audio elegido.
+  useEffect(() => {
+    if (!stickerAudio && format === 'video') setFormat('sticker');
+  }, [stickerAudio, format]);
+
+  const [mp4Supported, setMp4Supported] = useState(true);
+  useEffect(() => {
+    setMp4Supported(canRecordMp4());
+  }, []);
   const [fps, setFps] = useState<number>(12);
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -184,7 +223,25 @@ function CreatorApp() {
     setIsPlaying(false);
 
     try {
-      if (format === 'photo') {
+      if (format === 'video') {
+        if (!stickerAudio) throw new Error('Elegí un audio antes de generar el video.');
+        setStatusText('Grabando video con audio...');
+        const result = await renderVideoWithAudio(videoRef.current, stickerAudio.blob, {
+          startTime,
+          endTime: Math.min(endTime, startTime + MAX_SOUND_STICKER_SECONDS),
+          fps,
+          size: 512,
+          onProgress: (p) => {
+            setProgress(Math.min(95, p));
+            setStatusText(`Grabando video con audio (${p}%)...`);
+          },
+        });
+        setIsPlaying(false);
+        const objUrl = URL.createObjectURL(result.blob);
+        setResultBlob(result.blob);
+        setResultUrl(objUrl);
+        setResultMimeType(result.mimeType);
+      } else if (format === 'photo') {
         const blob = await captureCurrentFrame(videoRef.current, true);
         const objUrl = URL.createObjectURL(blob);
         setResultBlob(blob);
@@ -276,14 +333,16 @@ function CreatorApp() {
   const handleShareWhatsApp = async () => {
     if (!resultBlob) return;
 
-    const ext = resultMimeType === 'image/webp' ? 'webp' : resultMimeType === 'image/png' ? 'png' : 'gif';
+    const ext = extensionForMime(resultMimeType);
     const file = new File([resultBlob], `sticker-whatsapp.${ext}`, { type: resultMimeType });
 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
         await navigator.share({
           files: [file],
-          title: 'Sticker animado para WhatsApp',
+          title: resultMimeType.startsWith('video/')
+            ? 'Video con audio para WhatsApp'
+            : 'Sticker animado para WhatsApp',
         });
         setShared(true);
         setTimeout(() => setShared(false), 3000);
@@ -342,7 +401,7 @@ function CreatorApp() {
 
   const handleDownload = () => {
     if (!resultUrl) return;
-    const ext = resultMimeType === 'image/webp' ? 'webp' : resultMimeType === 'image/png' ? 'png' : 'gif';
+    const ext = extensionForMime(resultMimeType);
     const a = document.createElement('a');
     a.href = resultUrl;
     a.download = `sticker-whatsapp-${Date.now()}.${ext}`;
@@ -352,6 +411,7 @@ function CreatorApp() {
   const clipDuration = Math.max(0, endTime - startTime).toFixed(1);
   const isOptimalForWhatsApp = parseFloat(clipDuration) <= 5.0;
   const isStickerTooLarge = resultMimeType === 'image/webp' && resultBlob !== null && resultBlob.size > 500 * 1024;
+  const isVideoResult = resultMimeType.startsWith('video/');
 
   return (
     <main className="min-h-screen bg-[#0b0f17] text-white flex flex-col items-center justify-start p-4 sm:p-8 font-sans selection:bg-[#25D366] selection:text-black">
@@ -562,12 +622,20 @@ function CreatorApp() {
               </div>
             </div>
 
+            <AudioSticker
+              videoSrc={videoSrc}
+              startTime={startTime}
+              endTime={endTime}
+              value={stickerAudio}
+              onChange={updateStickerAudio}
+            />
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-1.5">
                   Formato de salida:
                 </label>
-                <div className="grid grid-cols-3 gap-1.5 bg-zinc-950/80 p-1 rounded-xl border border-zinc-800">
+                <div className="grid grid-cols-2 gap-1.5 bg-zinc-950/80 p-1 rounded-xl border border-zinc-800">
                   <button
                     onClick={() => setFormat('sticker')}
                     className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all ${
@@ -598,7 +666,30 @@ function CreatorApp() {
                   >
                     Foto Fija
                   </button>
+                  <button
+                    onClick={() => setFormat('video')}
+                    disabled={!stickerAudio}
+                    title={stickerAudio ? undefined : 'Primero elegí un audio del sticker'}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                      format === 'video'
+                        ? 'bg-[#25D366] text-black shadow'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Video con audio (.{mp4Supported ? 'mp4' : 'webm'})
+                  </button>
                 </div>
+                {format === 'video' && endTime - startTime > MAX_SOUND_STICKER_SECONDS && (
+                  <p className="mt-1.5 text-[11px] text-amber-400">
+                    El recorte dura más de {MAX_SOUND_STICKER_SECONDS}s: se usarán los primeros{' '}
+                    {MAX_SOUND_STICKER_SECONDS}s (máximo de WhatsApp para stickers con sonido).
+                  </p>
+                )}
+                {format === 'video' && !mp4Supported && (
+                  <p className="mt-1.5 text-[11px] text-amber-400">
+                    Tu navegador no graba MP4: el video saldrá en .webm. Usá Chrome, Edge o Safari para MP4.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -646,7 +737,14 @@ function CreatorApp() {
                 <>
                   <Sparkles className="w-5 h-5" />
                   <span>
-                    Generar {format === 'photo' ? 'Captura' : format === 'sticker' ? 'Sticker Animado (.webp)' : 'GIF'}
+                    Generar{' '}
+                    {format === 'photo'
+                      ? 'Captura'
+                      : format === 'sticker'
+                        ? 'Sticker Animado (.webp)'
+                        : format === 'video'
+                          ? `Video con Audio (.${mp4Supported ? 'mp4' : 'webm'})`
+                          : 'GIF'}
                   </span>
                 </>
               )}
@@ -667,18 +765,27 @@ function CreatorApp() {
           <section className="bg-zinc-900/90 backdrop-blur-md p-6 rounded-2xl border-2 border-[#25D366]/50 shadow-2xl flex flex-col items-center gap-5">
             <div className="flex items-center gap-2 text-[#25D366] font-semibold text-sm">
               <Check className="w-5 h-5" />
-              {resultMimeType === 'image/webp' ? '¡Sticker generado!' : resultMimeType === 'image/gif' ? '¡GIF animado generado!' : '¡Foto generada!'}
+              {isVideoResult ? '¡Video con audio generado!' : resultMimeType === 'image/webp' ? '¡Sticker generado!' : resultMimeType === 'image/gif' ? '¡GIF animado generado!' : '¡Foto generada!'}
             </div>
 
             <div className="p-3 bg-zinc-950 rounded-2xl border border-zinc-800 shadow-inner flex flex-col items-center">
               <div className="relative w-64 h-64 flex items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-zinc-900 to-black cursor-grab active:cursor-grabbing">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={resultUrl}
-                  alt="Sticker animado"
-                  draggable
-                  className="max-w-full max-h-full object-contain drop-shadow-2xl"
-                />
+                {isVideoResult ? (
+                  <video
+                    src={resultUrl}
+                    controls
+                    playsInline
+                    className="max-w-full max-h-full object-contain"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={resultUrl}
+                    alt="Sticker animado"
+                    draggable
+                    className="max-w-full max-h-full object-contain drop-shadow-2xl"
+                  />
+                )}
               </div>
 
               {resultBlob && (
@@ -686,7 +793,13 @@ function CreatorApp() {
                   <span>Peso: <strong>{(resultBlob.size / 1024).toFixed(1)} KB</strong></span>
                   &bull;
                   <span className="text-[#25D366]">
-                    {resultMimeType === 'image/webp' ? 'Formato WebP 512x512' : resultMimeType === 'image/png' ? 'Formato PNG' : 'Formato GIF animado'}
+                    {resultMimeType === 'image/webp'
+                      ? 'Formato WebP 512x512'
+                      : isVideoResult
+                        ? `Video ${extensionForMime(resultMimeType).toUpperCase()} 512x512 con audio`
+                        : resultMimeType === 'image/png'
+                          ? 'Formato PNG'
+                          : 'Formato GIF animado'}
                   </span>
                 </div>
               )}
@@ -717,14 +830,16 @@ function CreatorApp() {
                 </button>
               </div>
             )}
-            {resultMimeType !== 'image/png' && (
+            {resultMimeType !== 'image/png' && !isVideoResult && (
               <p className="text-xs text-zinc-300">
                 Para conservar la animación, descargá o compartí el archivo. Copiar como imagen lo convierte en una foto fija.
               </p>
             )}
 
             {/* AVISO ESPECIAL PARA IPHONE / IOS */}
-            {isIOS && resultMimeType !== 'image/png' ? (
+            {isVideoResult ? (
+              <SoundStickerGuide isIOS={isIOS} />
+            ) : isIOS && resultMimeType !== 'image/png' ? (
               <div className="w-full bg-[#1c2a38] border border-sky-500/40 rounded-2xl p-4 text-xs text-sky-100 flex flex-col gap-3">
                 <div className="flex items-center gap-2 font-bold text-sky-300 text-sm">
                   <Apple className="w-4 h-4 text-sky-400" />
@@ -793,7 +908,11 @@ function CreatorApp() {
                 className="flex-1 py-3.5 px-5 bg-[#25D366] hover:bg-[#20bd5a] text-black font-extrabold rounded-xl transition-all flex items-center justify-center gap-2 active:scale-95 shadow-lg shadow-[#25D366]/25"
               >
                 <Download className="w-5 h-5 text-black" />
-                <span>Guardar {resultMimeType === 'image/webp' ? 'Sticker (.webp)' : resultMimeType === 'image/png' ? 'Foto (.png)' : 'GIF (.gif)'}</span>
+                {isVideoResult ? (
+                  <span>Guardar video para sticker (.{extensionForMime(resultMimeType)})</span>
+                ) : (
+                  <span>Guardar {resultMimeType === 'image/webp' ? 'Sticker (.webp)' : resultMimeType === 'image/png' ? 'Foto (.png)' : 'GIF (.gif)'}</span>
+                )}
               </button>
 
               <button
